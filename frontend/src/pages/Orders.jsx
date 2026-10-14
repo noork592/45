@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth";
 import OrderEditDialog from "@/components/OrderEditDialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SlipHistory from "@/components/SlipHistory";
+import ResyncOrders from "@/components/ResyncOrders";
 import { useConfirm } from "@/lib/useConfirm";
 
 const STATUSES = ["Pending", "Dispatched", "Cleared"];
@@ -181,6 +182,8 @@ export default function Orders() {
           <Plus className="w-4 h-4 mr-1.5" /> {t("orders.newBtn")}
         </Link>
       </div>
+
+      {isAdmin && <ResyncOrders className="w-full" onApplied={() => load({ silent: true })} />}
 
       <div className="bg-white border border-slate-200 rounded-sm">
         <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row gap-3 sm:items-center">

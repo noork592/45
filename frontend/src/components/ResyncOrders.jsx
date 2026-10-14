@@ -46,7 +46,7 @@ function ChangeRow({ c, t }) {
   );
 }
 
-export default function ResyncOrders() {
+export default function ResyncOrders({ onApplied, className = "max-w-2xl" }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState(null);
@@ -57,7 +57,10 @@ export default function ResyncOrders() {
     try {
       const { data } = await api.post("/orders/reconcile", null, { params: { dry_run: dryRun } });
       setRes(data);
-      if (!dryRun) toast.success(t("resync.applied", { n: data.count }));
+      if (!dryRun) {
+        toast.success(t("resync.applied", { n: data.count }));
+        onApplied?.();
+      }
     } catch (e) {
       toast.error(e?.response?.data?.detail || t("common.failed"));
     } finally {
@@ -66,7 +69,7 @@ export default function ResyncOrders() {
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-sm max-w-2xl" data-testid="resync-card">
+    <div className={`bg-white border border-slate-200 rounded-sm ${className}`} data-testid="resync-card">
       <div className="p-5 border-b border-slate-200 flex items-center gap-3">
         <div className="w-10 h-10 rounded-sm bg-orange-50 border border-orange-200 grid place-items-center text-[#E65100]">
           <RefreshCw className="w-5 h-5" />
