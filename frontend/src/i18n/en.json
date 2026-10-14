@@ -164,7 +164,9 @@
       "Pending": "Pending",
       "Dispatched": "Dispatched",
       "Cleared": "Cleared"
-    }
+    },
+    "progress": "{{done}} / {{total}} pcs completed · {{pending}} pending",
+    "slipCompleted": "{{pcs}} pcs completed"
   },
   "newOrder": {
     "overline": "New Order",
@@ -360,7 +362,7 @@
     "customMax": "Custom: {{max}}/bag",
     "usesDefault": "Uses category default ({{min}}–{{max}}/bag)",
     "usesDefaultMax": "Uses category default ({{max}}/bag)",
-    "resetTitle": "Reset to category default",
+    "resetTitle": "Reset SKU bag override?",
     "resetConfirm": "Reset \"{{name}}\" to use category default bag size?",
     "deleteConfirm": "Delete \"{{name}}\"? This is blocked if any items or orders reference it.",
     "editSub": "Edit category max-per-bag and variants. Saves immediately.",
@@ -396,7 +398,6 @@
     "deleteSku": "Delete SKU",
     "renameSkuTitle": "Rename SKU",
     "renameSkuSub": "Edit the SKU name. Order history continues to reference this SKU by ID.",
-    "resetTitle": "Reset SKU bag override?",
     "deleteProductTitle": "Delete product?",
     "deleteSkuTitle": "Delete SKU?",
     "deleteSkuConfirm": "Delete SKU \"{{name}}\"? Blocked if any order references it."
@@ -416,7 +417,10 @@
     "password": "Initial Password",
     "passwordHint": "Min 6 characters",
     "role": "Role",
-    "roles": { "user": "User", "admin": "Admin" },
+    "roles": {
+      "user": "User",
+      "admin": "Admin"
+    },
     "added": "User {{email}} created",
     "deleted": "User deleted",
     "confirmDeleteTitle": "Delete user?",
@@ -661,5 +665,21 @@
     "slipPrintBtn": "Print",
     "slipCloseBtn": "Close",
     "closeBtn": "Close"
+  },
+  "resync": {
+    "title": "Resync pending orders",
+    "desc": "Checks every pending order against dispatch slips and shows which orders were already shipped but still show as pending.",
+    "checkBtn": "Check pending orders",
+    "applyBtn": "Apply fix to {{n}} orders",
+    "confirmApply": "Update {{n}} orders using their dispatch slips?",
+    "applied": "{{n}} orders updated",
+    "statPending": "Pending orders",
+    "statToFix": "Need fixing",
+    "statFixed": "Fixed",
+    "statPcs": "Pcs matched",
+    "allGood": "All pending orders match their slips — nothing to fix",
+    "willClear": "Will be Dispatched",
+    "willReduce": "Pending {{from}} → {{to}} pcs",
+    "checkedAt": "Checked at {{at}}"
   }
 }

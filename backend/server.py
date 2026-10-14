@@ -2051,12 +2051,16 @@ async def list_orders(status_filter: Optional[str] = None, user=Depends(get_curr
     # Track which dispatch ids are already linked to each order so the
     # inference step below doesn't attach a slip that's already shown.
     linked_disp_ids: Dict[str, set] = {}
+    order_skus: Dict[str, set] = {
+        o["id"]: {it.get("item_id") for it in (o.get("items") or []) + (o.get("original_items") or []) if it.get("item_id")}
+        for o in items
+    }
     if order_ids:
         oid_set = set(order_ids)
         async for d in db.dispatches.find(
             {"$or": [{"order_id": {"$in": order_ids}}, {"order_ids": {"$in": order_ids}}]},
             {"_id": 0, "id": 1, "order_id": 1, "order_ids": 1, "items": 1,
-             "dispatched_at": 1, "last_dispatched_at": 1, "slip_no": 1},
+             "dispatched_at": 1, "last_dispatched_at": 1, "slip_no": 1, "order_alloc": 1},
         ):
             targets = []
             if d.get("order_id") in oid_set:
@@ -2080,8 +2084,15 @@ async def list_orders(status_filter: Optional[str] = None, user=Depends(get_curr
                 "quantity": int(it.get("quantity") or 0),
             } for it in (d.get("items") or [])]
             for oid in targets:
+                alloc = (d.get("order_alloc") or {}).get(oid)
+                if alloc:
+                    grp_items = [{**it, "quantity": int(alloc[it["item_id"]])}
+                                 for it in slip_items if it.get("item_id") in alloc]
+                else:
+                    known = order_skus.get(oid) or set()
+                    grp_items = [it for it in slip_items if it.get("item_id") in known] or slip_items
                 bucket = disp_map.setdefault(oid, {})
-                for it in slip_items:
+                for it in grp_items:
                     key = it.get("item_id") or it.get("item_name") or ""
                     row = bucket.setdefault(key, {
                         "item_id": it.get("item_id"),
@@ -2092,7 +2103,8 @@ async def list_orders(status_filter: Optional[str] = None, user=Depends(get_curr
                     })
                     row["quantity"] += it["quantity"]
                 disp_slips.setdefault(oid, []).append({
-                    "date": day, "slip_no": d.get("slip_no"), "items": slip_items,
+                    "date": day, "slip_no": d.get("slip_no"), "items": grp_items,
+                    "pcs": sum(it["quantity"] for it in grp_items),
                 })
                 linked_disp_ids.setdefault(oid, set()).add(d.get("id"))
 
@@ -2141,6 +2153,8 @@ async def list_orders(status_filter: Optional[str] = None, user=Depends(get_curr
         o["customer_location"] = loc.get("location", "")
         o["customer_address"] = loc.get("address", "")
         o["dispatched_items"] = list(disp_map.get(o["id"], {}).values())
+        o["completed_pcs"] = sum(int(it.get("quantity") or 0) for it in o["dispatched_items"])
+        o["pending_pcs"] = sum(int(it.get("quantity") or 0) for it in (o.get("items") or []))
         # Per-slip brief: [{date, slip_no, items:[...]}, ...] sorted oldest→newest.
         slips = sorted(disp_slips.get(o["id"], []), key=lambda s: (s.get("date") or ""))
         o["dispatch_summary"] = slips
@@ -5735,9 +5749,17 @@ async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = T
             else:
                 items.append(dict(it))
         new_items = _apply_line_clear_threshold(items, take, o.get("original_items") or items)
+        names = {it.get("item_id"): it.get("item_name") or it.get("product_name") for it in items}
         changes.append({
             "order_id": o["id"], "customer_name": o.get("customer_name"), "order_date": oday,
             "slips": [u["d"].get("slip_no") for u in used], "applied": take,
+            "slip_lines": [{
+                "slip_no": u["d"].get("slip_no"), "date": str(u["d"].get("dispatched_at") or "")[:10],
+                "items": [{"item_name": names.get(iid) or iid, "quantity": q} for iid, q in u["per"].items()],
+            } for u in used],
+            "applied_pcs": sum(take.values()),
+            "pending_before": sum(int(it.get("quantity") or 0) for it in items),
+            "pending_after": sum(int(it.get("quantity") or 0) for it in new_items),
             "new_status": "Dispatched" if not new_items else "Pending",
         })
         if not apply:
@@ -5771,7 +5793,14 @@ async def reconcile_orders(dry_run: bool = True, admin=Depends(require_admin)):
     out: List[Dict[str, Any]] = []
     for cid in cids:
         out.extend(await _reconcile_customer_orders(cid, apply=not dry_run))
-    return {"dry_run": dry_run, "count": len(out), "changes": out}
+    pending_after = await db.orders.count_documents({"status": "Pending"})
+    return {
+        "dry_run": dry_run, "count": len(out), "changes": out,
+        "total_pcs": sum(c["applied_pcs"] for c in out),
+        "fully_cleared": sum(1 for c in out if c["new_status"] == "Dispatched"),
+        "pending_orders": pending_after,
+        "checked_at": now_iso(),
+    }
 
 
 @api_router.post("/dispatch/off-order")

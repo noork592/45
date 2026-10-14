@@ -11,6 +11,7 @@ import { Plus, Search, Trash2, Edit3, AlertTriangle, Truck, Clock, CheckCircle2,
 import { useAuth } from "@/lib/auth";
 import OrderEditDialog from "@/components/OrderEditDialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import SlipHistory from "@/components/SlipHistory";
 import { useConfirm } from "@/lib/useConfirm";
 
 const STATUSES = ["Pending", "Dispatched", "Cleared"];
@@ -264,6 +265,8 @@ export default function Orders() {
                         ))}
                       </div>
                     )}
+                    {(filter === "Pending" || filter === "Dispatched") && <SlipHistory order={o} />}
+                    {(filter === "all" || filter === "discrepancy") && <SlipHistory order={o} showSlips={false} />}
 
                     {/* DISPATCHED tab — quantities actually shipped. Includes
                         PARTIALLY dispatched orders so shipped qty is never hidden. */}

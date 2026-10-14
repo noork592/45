@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Save, AlertTriangle, Clock, Lock, Info } from "lucide-react";
 import PwaHealth from "@/components/PwaHealth";
 import BackupRestore from "@/components/BackupRestore";
+import ResyncOrders from "@/components/ResyncOrders";
 
 // Software release version — surfaced in Admin Settings so operators can
 // quickly confirm which build they are running when reporting issues.
@@ -251,6 +252,8 @@ export default function AdminSettings() {
           </div>
         </div>
       </div>
+
+      <ResyncOrders />
 
       {/* PWA & Security health */}
       <div className="max-w-2xl">
