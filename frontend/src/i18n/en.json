@@ -166,7 +166,8 @@
       "Cleared": "Cleared"
     },
     "progress": "{{done}} / {{total}} pcs completed · {{pending}} pending",
-    "slipCompleted": "{{pcs}} pcs completed"
+    "slipCompleted": "{{pcs}} pcs completed",
+    "slipDeleted": "Slip #{{n}} was deleted"
   },
   "newOrder": {
     "overline": "New Order",

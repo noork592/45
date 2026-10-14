@@ -166,7 +166,8 @@
       "Cleared": "समाप्त"
     },
     "progress": "{{total}} में से {{done}} पीस पूरे · {{pending}} बाकी",
-    "slipCompleted": "{{pcs}} पीस पूरे"
+    "slipCompleted": "{{pcs}} पीस पूरे",
+    "slipDeleted": "स्लिप #{{n}} डिलीट हो चुकी है"
   },
   "newOrder": {
     "overline": "नया ऑर्डर",

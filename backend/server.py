@@ -3549,6 +3549,8 @@ async def get_dispatch_by_slip(slip_no: int, user=Depends(get_current_user)):
             "location": cust.get("location") or "",
             "transport_name": d.get("transport_name") or cust.get("transport_name") or "",
             "private_mark": cust.get("private_mark") or "",
+            "bill_number_mode": bool(cust.get("bill_number_mode")),
+            "email": cust.get("email") or "",
         },
     }
 

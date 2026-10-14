@@ -13,6 +13,7 @@ import OrderEditDialog from "@/components/OrderEditDialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SlipHistory from "@/components/SlipHistory";
 import ResyncOrders from "@/components/ResyncOrders";
+import SlipPreviewDialog from "@/components/SlipPreviewDialog";
 import { useConfirm } from "@/lib/useConfirm";
 
 const STATUSES = ["Pending", "Dispatched", "Cleared"];
@@ -66,6 +67,19 @@ export default function Orders() {
   const [highlightId, setHighlightId] = useState(null);
   const [discCount, setDiscCount] = useState(0);
   const { state: confirmState, confirm, close: closeConfirm } = useConfirm();
+  const [slipView, setSlipView] = useState(null);
+
+  const openSlip = async (slipNo) => {
+    if (slipNo == null) return;
+    try {
+      const { data } = await api.get(`/dispatches/by-slip/${slipNo}`);
+      const d = data.dispatch || {};
+      setSlipView({ row: { kind: "dispatch", id: d.id, when: d.dispatched_at || d.created_at, raw: d }, party: data.customer || null });
+    } catch (e) {
+      const detail = e?.response?.data?.detail;
+      toast.error(e?.response?.status === 410 ? t("orders.slipDeleted", { n: slipNo }) : ((typeof detail === "string" && detail) || t("common.failed")));
+    }
+  };
 
   const load = async (opts = {}) => {
     // On a silent refresh (e.g. right after editing an order) we skip the
@@ -268,7 +282,7 @@ export default function Orders() {
                         ))}
                       </div>
                     )}
-                    {(filter === "Pending" || filter === "Dispatched") && <SlipHistory order={o} />}
+                    {(filter === "Pending" || filter === "Dispatched") && <SlipHistory order={o} onOpenSlip={openSlip} />}
 
                     {/* DISPATCHED tab — quantities actually shipped. Includes
                         PARTIALLY dispatched orders so shipped qty is never hidden. */}
@@ -350,7 +364,14 @@ export default function Orders() {
                           <div key={`g-${gi}`} className="flex flex-wrap items-center gap-1.5">
                             <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-sm">
                               <Truck className="w-3 h-3" /> {t("orders.briefDispatchedOn", { date: fmtDate(grp.date) })}
-                              {grp.slip_no ? ` · ${t("orders.slip", "Slip")} #${grp.slip_no}` : ""}
+                              {grp.slip_no ? " · " : ""}
+                              {grp.slip_no && (
+                                <button type="button" onClick={() => openSlip(grp.slip_no)}
+                                        data-testid={`order-brief-slip-link-${o.id}-${gi}`}
+                                        className="underline underline-offset-2 decoration-dotted hover:text-[#E65100] transition-colors">
+                                  {t("orders.slip", "Slip")} #{grp.slip_no}
+                                </button>
+                              )}
                             </span>
                             {grp.items.map((it, i) => (
                               <ItemChip key={`gi-${i}`} it={it} tone="dispatched"
@@ -446,6 +467,8 @@ export default function Orders() {
         onOpenChange={(o) => { if (!o) setEditTarget(null); }}
         onSaved={handleSaved}
       />
+
+      <SlipPreviewDialog slipRow={slipView?.row} party={slipView?.party} onClose={() => setSlipView(null)} />
 
       <ConfirmDialog
         open={!!confirmState}
