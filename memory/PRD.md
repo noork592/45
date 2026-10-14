@@ -54,3 +54,4 @@ Full-stack Factory Order Management ERP (React + FastAPI + MongoDB): user roles,
 - 2026-10-14: Resync card also shown at top of Orders page (admins only); list auto-refreshes after Apply.
 - 2026-10-14: Removed progress bar from All Orders / Discrepancy view (kept on Pending & Dispatched tabs).
 - 2026-10-14 (feature): Slip Click Preview — slip numbers on Orders page (SlipHistory rows + All-tab brief) open full printable slip dialog in place. Slip dialog extracted to components/SlipPreviewDialog.jsx (shared with DispatchLedger). by-slip API now returns customer.bill_number_mode/email.
+- 2026-10-14 (feature): Undo for timing-discrepancy resolutions (clear/update_date/keep/delete). Snapshot in db.discrepancy_undo (order_before + dispatch_before); POST /api/orders/{id}/undo-discrepancy restores; list_orders returns discrepancy_undo; UI: toast Undo action + persistent amber undo bar (disc-undo-bar-{id}).
