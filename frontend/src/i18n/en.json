@@ -691,5 +691,25 @@
     "willClear": "Will be Dispatched",
     "willReduce": "Pending {{from}} → {{to}} pcs",
     "checkedAt": "Checked at {{at}}"
+  },
+  "activity": {
+    "title": "Order history",
+    "empty": "No activity recorded yet. New changes from now on will appear here.",
+    "created": "Order created",
+    "items_added": "Items added (merged)",
+    "edited": "Order edited",
+    "deleted": "Order deleted",
+    "status_changed": "Status changed",
+    "slip_linked": "Dispatched via slip",
+    "slip_auto_linked": "Linked to slip (auto resync)",
+    "slip_edited": "Slip edited — qty returned to order",
+    "slip_deleted": "Slip deleted — qty returned to order",
+    "slip_reassigned": "Slip moved to another party — qty returned",
+    "slip_qty_restored": "Qty returned to order",
+    "discrepancy_clear": "Discrepancy: cleared as dispatched",
+    "discrepancy_update_date": "Discrepancy: order date updated",
+    "discrepancy_keep": "Discrepancy: kept pending",
+    "discrepancy_delete": "Discrepancy: entry deleted",
+    "discrepancy_undo": "Discrepancy action undone"
   }
 }

@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Search, Trash2, Edit3, AlertTriangle, Truck, Clock, CheckCircle2, MapPin, Undo2 } from "lucide-react";
+import { Plus, Search, Trash2, Edit3, AlertTriangle, Truck, Clock, CheckCircle2, MapPin, Undo2, History } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import OrderEditDialog from "@/components/OrderEditDialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SlipHistory from "@/components/SlipHistory";
 import ResyncOrders from "@/components/ResyncOrders";
 import SlipPreviewDialog from "@/components/SlipPreviewDialog";
+import OrderActivityDialog from "@/components/OrderActivityDialog";
 import { useConfirm } from "@/lib/useConfirm";
 
 const STATUSES = ["Pending", "Dispatched", "Cleared"];
@@ -68,6 +69,7 @@ export default function Orders() {
   const [discCount, setDiscCount] = useState(0);
   const { state: confirmState, confirm, close: closeConfirm } = useConfirm();
   const [slipView, setSlipView] = useState(null);
+  const [historyOrder, setHistoryOrder] = useState(null);
 
   const openSlip = async (slipNo) => {
     if (slipNo == null) return;
@@ -468,6 +470,11 @@ export default function Orders() {
                         {STATUSES.map((s) => <SelectItem key={s} value={s}>{t(`orders.status.${s}`, s)}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                    <Button variant="ghost" size="sm" onClick={() => setHistoryOrder(o)}
+                            data-testid={`order-history-${o.id}`} title={t("activity.title")}
+                            className="h-10 w-10 p-0 rounded-sm text-slate-500 hover:text-[#E65100] hover:bg-orange-50 shrink-0">
+                      <History className="w-4 h-4" />
+                    </Button>
                     {canEditOrders && (
                       <Button variant="ghost" size="sm" onClick={() => setEditTarget(o)}
                               data-testid={`order-edit-${o.id}`}
@@ -496,6 +503,9 @@ export default function Orders() {
         onOpenChange={(o) => { if (!o) setEditTarget(null); }}
         onSaved={handleSaved}
       />
+
+      <OrderActivityDialog order={historyOrder} onClose={() => setHistoryOrder(null)}
+                           onOpenSlip={(n) => { setHistoryOrder(null); openSlip(n); }} />
 
       <SlipPreviewDialog slipRow={slipView?.row} party={slipView?.party} onClose={() => setSlipView(null)} />
 

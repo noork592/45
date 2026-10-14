@@ -691,5 +691,25 @@
     "willClear": "डिस्पैच हो जाएगा",
     "willReduce": "पेंडिंग {{from}} → {{to}} पीस",
     "checkedAt": "जाँच का समय {{at}}"
+  },
+  "activity": {
+    "title": "ऑर्डर हिस्ट्री",
+    "empty": "अभी कोई गतिविधि दर्ज नहीं है। अब से होने वाले बदलाव यहाँ दिखेंगे।",
+    "created": "ऑर्डर बनाया",
+    "items_added": "आइटम जोड़े (मर्ज)",
+    "edited": "ऑर्डर एडिट किया",
+    "deleted": "ऑर्डर डिलीट किया",
+    "status_changed": "स्टेटस बदला",
+    "slip_linked": "स्लिप से डिस्पैच",
+    "slip_auto_linked": "स्लिप से जोड़ा (ऑटो रीसिंक)",
+    "slip_edited": "स्लिप एडिट — quantity ऑर्डर में वापस",
+    "slip_deleted": "स्लिप डिलीट — quantity ऑर्डर में वापस",
+    "slip_reassigned": "स्लिप दूसरी पार्टी को — quantity वापस",
+    "slip_qty_restored": "quantity ऑर्डर में वापस",
+    "discrepancy_clear": "Discrepancy: डिस्पैच मानकर क्लियर",
+    "discrepancy_update_date": "Discrepancy: ऑर्डर तारीख बदली",
+    "discrepancy_keep": "Discrepancy: पेंडिंग रखा",
+    "discrepancy_delete": "Discrepancy: एंट्री डिलीट",
+    "discrepancy_undo": "Discrepancy action पूर्ववत"
   }
 }

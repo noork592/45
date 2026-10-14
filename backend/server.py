@@ -45,6 +45,26 @@ logger = logging.getLogger(__name__)
 LINE_CLEAR_THRESHOLD = 0.85
 
 
+async def log_order_activity(order_id: str, action: str, by: Optional[str] = None,
+                             items: Optional[List[Dict[str, Any]]] = None,
+                             slip_no: Optional[int] = None, note: str = "") -> None:
+    if not order_id:
+        return
+    await db.order_activity.insert_one({
+        "id": str(uuid.uuid4()), "order_id": order_id, "action": action,
+        "by": by or "system", "at": now_iso(), "slip_no": slip_no, "note": note,
+        "items": [{"item_name": it.get("item_name") or it.get("product_name") or "",
+                   "quantity": int(it.get("quantity") or 0)} for it in (items or [])],
+    })
+
+
+async def _log_alloc(alloc: Dict[str, Dict[str, int]], lines: List[Dict[str, Any]], by: str,
+                     slip_no: Optional[int], action: str = "slip_linked") -> None:
+    names = {li.get("item_id"): li.get("item_name") or li.get("product_name") for li in lines}
+    for oid, m in (alloc or {}).items():
+        await log_order_activity(oid, action, by, [{"item_name": names.get(i) or i, "quantity": q} for i, q in m.items()], slip_no)
+
+
 def _apply_line_clear_threshold(
     order_items: List[Dict[str, Any]],
     dispatched_map: Dict[str, int],
@@ -1976,6 +1996,7 @@ async def create_order(body: OrderIn, user=Depends(require_action("add:orders"))
                           "delivery_date": body.delivery_date or existing.get("delivery_date"),
                           "notes": (existing.get("notes", "") + " | " + (body.notes or "")).strip(" |")}},
             )
+            await log_order_activity(existing["id"], "items_added", user["email"], [it.model_dump() for it in body.items])
             await _persist_customer_prefs(body.customer_id, body.items)
             return await db.orders.find_one({"id": existing["id"]}, {"_id": 0})
 
@@ -1993,8 +2014,9 @@ async def create_order(body: OrderIn, user=Depends(require_action("add:orders"))
         "updated_at": now_iso(),
     }
     await db.orders.insert_one(doc)
+    await log_order_activity(doc["id"], "created", user["email"], doc["items"])
     await _persist_customer_prefs(body.customer_id, body.items)
-    await _reconcile_customer_orders(body.customer_id)
+    await _reconcile_customer_orders(body.customer_id, actor=user["email"])
     return await db.orders.find_one({"id": doc["id"]}, {"_id": 0})
 
 
@@ -2272,6 +2294,7 @@ async def update_order_status(oid: str, body: OrderStatusUpdate, user=Depends(re
     res = await db.orders.update_one({"id": oid}, {"$set": {"status": body.status, "updated_at": now_iso()}})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Order not found")
+    await log_order_activity(oid, "status_changed", user["email"], note=body.status)
     return await db.orders.find_one({"id": oid}, {"_id": 0})
 
 
@@ -2312,7 +2335,9 @@ async def admin_update_order(oid: str, body: OrderUpdate, admin=Depends(require_
         raise HTTPException(status_code=400, detail="No fields to update")
     update["updated_at"] = now_iso()
     await db.orders.update_one({"id": oid}, {"$set": update})
-    await _reconcile_customer_orders(update.get("customer_id") or existing.get("customer_id"))
+    changed = [k for k in ("customer_id", "items", "order_date", "delivery_date", "notes", "status") if k in update]
+    await log_order_activity(oid, "edited", admin["email"], update.get("items"), note=", ".join(changed))
+    await _reconcile_customer_orders(update.get("customer_id") or existing.get("customer_id"), actor=admin["email"])
     return await db.orders.find_one({"id": oid}, {"_id": 0})
 
 
@@ -2321,6 +2346,7 @@ async def delete_order(oid: str, user=Depends(require_action("delete:orders"))):
     res = await db.orders.delete_one({"id": oid})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Order not found")
+    await log_order_activity(oid, "deleted", user["email"])
     return {"ok": True}
 
 
@@ -2365,6 +2391,8 @@ async def resolve_discrepancy(oid: str, body: DiscrepancyResolveIn,
         "by": user.get("email") or user.get("username") or "",
         "order_before": order, "dispatch_id": body.dispatch_id, "dispatch_before": disp_before,
     })
+    _slip = (await db.dispatches.find_one({"id": body.dispatch_id}, {"_id": 0, "slip_no": 1}) or {}).get("slip_no") if body.dispatch_id else None
+    await log_order_activity(oid, f"discrepancy_{action}", user.get("email"), slip_no=_slip)
 
     if action == "delete":
         await db.orders.delete_one({"id": oid})
@@ -2441,6 +2469,11 @@ async def resolve_discrepancy(oid: str, body: DiscrepancyResolveIn,
             "order": await db.orders.find_one({"id": oid}, {"_id": 0})}
 
 
+@api_router.get("/orders/{oid}/activity")
+async def order_activity(oid: str, user=Depends(get_current_user)):
+    return await db.order_activity.find({"order_id": oid}, {"_id": 0}).sort("at", -1).to_list(500)
+
+
 @api_router.post("/orders/{oid}/undo-discrepancy")
 async def undo_discrepancy(oid: str, user=Depends(require_action("edit:orders"))):
     """Revert the last discrepancy resolution (clear / update_date / keep / delete)."""
@@ -2457,6 +2490,7 @@ async def undo_discrepancy(oid: str, user=Depends(require_action("edit:orders"))
             "updated_at": now_iso(),
         }})
     await db.discrepancy_undo.delete_many({"order_id": oid})
+    await log_order_activity(oid, "discrepancy_undo", user["email"], note=entry["action"])
     return {"ok": True, "undone": entry["action"], "order": await db.orders.find_one({"id": oid}, {"_id": 0})}
 
 
@@ -2951,6 +2985,9 @@ async def dispatch_execute(body: DispatchExecuteIn, user=Depends(require_action(
     # product BOM. Operates only on `dispatched_lines` (the NEW quantities
     # just sent out), so merging into an existing slip doesn't double-deduct.
     await _consume_bom_for_lines(dispatched_lines, dispatch_doc["id"], user.get("email") or "")
+    exec_alloc = {body.order_id: {d["item_id"]: int(d["quantity"]) for d in dispatched_lines}}
+    await db.dispatches.update_one({"id": dispatch_doc["id"]}, {"$inc": _alloc_inc(exec_alloc)})
+    await _log_alloc(exec_alloc, dispatched_lines, user["email"], dispatch_doc.get("slip_no"))
 
     updated_order = await db.orders.find_one({"id": body.order_id}, {"_id": 0})
     return {
@@ -3440,11 +3477,13 @@ async def update_dispatch(did: str, body: DispatchEdit, user=Depends(require_act
     res = await db.dispatches.update_one({"id": did}, ops)
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Dispatch not found")
+    if edit_alloc:
+        await _log_alloc(edit_alloc, upd.get("items") or [], user["email"], existing.get("slip_no"))
     if reassigned:
-        await _restore_dispatch_qty_to_orders(existing, list(existing.get("items") or []))
+        await _restore_dispatch_qty_to_orders(existing, list(existing.get("items") or []), actor=user["email"], reason="slip_reassigned")
     elif body.items is not None and restore_lines:
-        await _restore_dispatch_qty_to_orders(existing, restore_lines)
-    await _reconcile_customer_orders(upd.get("customer_id") or existing.get("customer_id"))
+        await _restore_dispatch_qty_to_orders(existing, restore_lines, actor=user["email"], reason="slip_edited")
+    await _reconcile_customer_orders(upd.get("customer_id") or existing.get("customer_id"), actor=user["email"])
     return await db.dispatches.find_one({"id": did}, {"_id": 0})
 
 
@@ -3473,7 +3512,7 @@ async def delete_dispatch(did: str, admin=Depends(require_action("delete:dispatc
     # the remaining live dispatches when reconstructing pending quantities
     # for lines that were previously auto-cleared by the 85% rule.
     await db.dispatches.delete_one({"id": did})
-    touched_orders = await _restore_dispatch_qty_to_orders(existing, restore_items)
+    touched_orders = await _restore_dispatch_qty_to_orders(existing, restore_items, actor=admin.get("email"), reason="slip_deleted")
     restored_rm = await _revert_bom_consumption_for_dispatch(did, admin.get("email") or "")
 
     # Tombstone — preserve the slip number so a future lookup on this
@@ -3645,6 +3684,7 @@ class EstimateItemIn(BaseModel):
     item_id: Optional[str] = None
     item_name: Optional[str] = None      # fallback if item_id missing
     quantity: float
+    price_override: Optional[float] = None  # operator-typed net price per piece
 
 class EstimateIn(BaseModel):
     customer_id: str
@@ -3700,6 +3740,10 @@ async def _compute_estimate(body: EstimateIn) -> Dict[str, Any]:
             })
             continue
         pricing = await compute_line_pricing(price_list_id, item["id"], item.get("product_name") or "")
+        list_net = pricing["net_unit_price"]
+        overridden = row.price_override is not None and row.price_override >= 0
+        if overridden:
+            pricing = {**pricing, "net_unit_price": round(float(row.price_override), 2)}
         line_value = round(pricing["net_unit_price"] * qty, 2)
         line_total += line_value
         lines.append({
@@ -3711,6 +3755,8 @@ async def _compute_estimate(body: EstimateIn) -> Dict[str, Any]:
             "discount_value": pricing["discount_value"],
             "discount_type": pricing["discount_type"],
             "net_unit_price": pricing["net_unit_price"],
+            "list_net_unit_price": list_net,
+            "price_override": overridden,
             "line_value": line_value,
             "found": True,
         })
@@ -5431,6 +5477,8 @@ async def _persist_customer_transport(customer_id: Optional[str], transport_name
 async def _restore_dispatch_qty_to_orders(
     dispatch: Dict[str, Any],
     restore_items: List[Dict[str, Any]],
+    actor: Optional[str] = None,
+    reason: str = "slip_qty_restored",
 ) -> List[str]:
     """Add the given (item_id, quantity) pairs back into the dispatch's
     parent order(s). Used by DELETE /dispatches/{did} and by PATCH when the
@@ -5469,6 +5517,7 @@ async def _restore_dispatch_qty_to_orders(
 
     customer_id = dispatch.get("customer_id")
     touched: Dict[str, Dict[str, Any]] = {}  # id -> live order doc (mutated)
+    restored_log: Dict[str, List[Dict[str, Any]]] = {}
 
     for r in restore_items:
         iid = r.get("item_id")
@@ -5561,8 +5610,10 @@ async def _restore_dispatch_qty_to_orders(
                 }
             template["quantity"] = new_qty_to_add
             items_list.append(template)
+            qty = new_qty_to_add
 
         target["items"] = items_list
+        restored_log.setdefault(target["id"], []).append({"item_name": r.get("item_name") or r.get("product_name"), "quantity": qty})
         # If the order was Dispatched and now has items again, reopen it.
         if items_list and target.get("status") != "Pending":
             target["status"] = "Pending"
@@ -5578,6 +5629,7 @@ async def _restore_dispatch_qty_to_orders(
                 "updated_at": now_iso(),
             }},
         )
+        await log_order_activity(oid, reason, actor, restored_log.get(oid), dispatch.get("slip_no"))
     return list(touched.keys())
 
 
@@ -5700,7 +5752,8 @@ def _order_sort_key(o: Dict[str, Any]):
     return (str(o.get("order_date") or o.get("created_at") or "")[:10], str(o.get("created_at") or ""))
 
 
-async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = True) -> List[Dict[str, Any]]:
+async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = True,
+                                     actor: Optional[str] = None) -> List[Dict[str, Any]]:
     """Apply slip quantity that is not yet attributed to any order (e.g. order
     entered after the slip, slip reassigned to this party) to the customer's
     Pending orders. Only slips dated on/after the order date count. Orders are
@@ -5822,6 +5875,9 @@ async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = T
                 {"$addToSet": {"order_ids": o["id"]}, "$inc": inc},
             )
             u["heur"].clear()
+            await log_order_activity(o["id"], "slip_auto_linked", actor,
+                                     [{"item_name": names.get(i) or i, "quantity": q} for i, q in u["per"].items()],
+                                     u["d"].get("slip_no"))
     return changes
 
 
@@ -5831,7 +5887,7 @@ async def reconcile_orders(dry_run: bool = True, admin=Depends(require_admin)):
     cids = await db.orders.distinct("customer_id", {"status": "Pending"})
     out: List[Dict[str, Any]] = []
     for cid in cids:
-        out.extend(await _reconcile_customer_orders(cid, apply=not dry_run))
+        out.extend(await _reconcile_customer_orders(cid, apply=not dry_run, actor=admin.get("email")))
     pending_after = await db.orders.count_documents({"status": "Pending"})
     return {
         "dry_run": dry_run, "count": len(out), "changes": out,
@@ -6005,6 +6061,7 @@ async def dispatch_off_order(body: OffOrderDispatchIn, user=Depends(require_acti
         # Auto-consume raw materials only for the NEW lines (merging into
         # an existing slip must not double-deduct previously dispatched items).
         await _consume_bom_for_lines(dispatched_lines, dispatch_doc["id"], user.get("email") or "")
+        await _log_alloc(fifo_alloc, dispatched_lines, user["email"], dispatch_doc.get("slip_no"))
         return {
             "dispatch": dispatch_doc,
             "merged": True,
@@ -6041,7 +6098,8 @@ async def dispatch_off_order(body: OffOrderDispatchIn, user=Depends(require_acti
     dispatch_doc.pop("_id", None)
     # Auto-consume raw materials for this off-order dispatch
     await _consume_bom_for_lines(dispatched_lines, dispatch_doc["id"], user.get("email") or "")
-    await _reconcile_customer_orders(customer_id)
+    await _log_alloc(fifo_alloc, dispatched_lines, user["email"], dispatch_doc.get("slip_no"))
+    await _reconcile_customer_orders(customer_id, actor=user["email"])
     dispatch_doc = await db.dispatches.find_one({"id": dispatch_doc["id"]}, {"_id": 0})
     return {"dispatch": dispatch_doc, "order_ids_touched": touched_order_ids}
 
