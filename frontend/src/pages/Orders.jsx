@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Search, Trash2, Edit3, AlertTriangle, Truck, Clock, CheckCircle2, MapPin } from "lucide-react";
+import { Plus, Search, Trash2, Edit3, AlertTriangle, Truck, Clock, CheckCircle2, MapPin, Undo2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import OrderEditDialog from "@/components/OrderEditDialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -169,6 +169,17 @@ export default function Orders() {
     });
   };
 
+  const undoDiscrepancy = async (orderId) => {
+    try {
+      await api.post(`/orders/${orderId}/undo-discrepancy`);
+      toast.success(t("orders.discUndone"));
+      await load({ silent: true });
+      setHighlightId(orderId);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t("common.failed"));
+    }
+  };
+
   // Resolve a dispatch-before-order discrepancy. `action` is one of
   // update_date | clear | delete | keep. Reloads the list afterwards.
   const resolveDiscrepancy = async (order, action) => {
@@ -177,7 +188,10 @@ export default function Orders() {
         action,
         dispatch_id: order.discrepancy?.dispatch_id,
       });
-      toast.success(action === "delete" ? t("orders.discDeleted") : t("orders.discResolved"));
+      toast.success(action === "delete" ? t("orders.discDeleted") : t("orders.discResolved"), {
+        duration: 8000,
+        action: { label: t("orders.discUndo"), onClick: () => undoDiscrepancy(order.id) },
+      });
       load({ silent: true });
     } catch (e) {
       toast.error(e?.response?.data?.detail || t("common.failed"));
@@ -274,6 +288,21 @@ export default function Orders() {
                       #{o.id.slice(0, 8)} · {new Date(o.order_date || o.created_at).toLocaleDateString()}
                       {o.delivery_date && <> · {t("orders.delivery")}: {new Date(o.delivery_date).toLocaleDateString()}</>}
                     </div>
+                    {o.discrepancy_undo && canEditOrders && (
+                      <div className="mt-2 inline-flex flex-wrap items-center gap-2 rounded-sm border border-amber-200 bg-amber-50/70 px-2 py-1 text-[11px] text-amber-900"
+                           data-testid={`disc-undo-bar-${o.id}`}>
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                        <span>{t("orders.discResolvedAs", {
+                          action: t(`orders.discActName.${o.discrepancy_undo.action}`),
+                          date: fmtDate(o.discrepancy_undo.at),
+                        })}</span>
+                        <button type="button" onClick={() => undoDiscrepancy(o.id)}
+                                data-testid={`disc-undo-btn-${o.id}`}
+                                className="inline-flex items-center gap-1 font-bold text-[#E65100] hover:underline">
+                          <Undo2 className="w-3.5 h-3.5" /> {t("orders.discUndo")}
+                        </button>
+                      </div>
+                    )}
                     {/* PENDING tab — remaining (still-open) items only */}
                     {filter === "Pending" && (
                       <div className="mt-2 flex flex-wrap gap-1.5">

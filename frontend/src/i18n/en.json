@@ -167,7 +167,16 @@
     },
     "progress": "{{done}} / {{total}} pcs completed · {{pending}} pending",
     "slipCompleted": "{{pcs}} pcs completed",
-    "slipDeleted": "Slip #{{n}} was deleted"
+    "slipDeleted": "Slip #{{n}} was deleted",
+    "discUndo": "Undo",
+    "discUndone": "Undone — discrepancy is back",
+    "discResolvedAs": "Timing discrepancy resolved: {{action}} · {{date}}",
+    "discActName": {
+      "clear": "Cleared",
+      "update_date": "Date updated",
+      "keep": "Kept pending",
+      "delete": "Deleted"
+    }
   },
   "newOrder": {
     "overline": "New Order",

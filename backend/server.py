@@ -2051,6 +2051,12 @@ async def list_orders(status_filter: Optional[str] = None, user=Depends(get_curr
     # Track which dispatch ids are already linked to each order so the
     # inference step below doesn't attach a slip that's already shown.
     linked_disp_ids: Dict[str, set] = {}
+    undo_map: Dict[str, Dict[str, Any]] = {}
+    if order_ids:
+        async for u in db.discrepancy_undo.find(
+            {"order_id": {"$in": order_ids}}, {"_id": 0, "order_id": 1, "action": 1, "at": 1, "by": 1}
+        ):
+            undo_map[u["order_id"]] = {"action": u["action"], "at": u["at"], "by": u.get("by")}
     order_skus: Dict[str, set] = {
         o["id"]: {it.get("item_id") for it in (o.get("items") or []) + (o.get("original_items") or []) if it.get("item_id")}
         for o in items
@@ -2152,6 +2158,7 @@ async def list_orders(status_filter: Optional[str] = None, user=Depends(get_curr
         o["customer_city"] = loc.get("city", "")
         o["customer_location"] = loc.get("location", "")
         o["customer_address"] = loc.get("address", "")
+        o["discrepancy_undo"] = undo_map.get(o["id"])
         o["dispatched_items"] = list(disp_map.get(o["id"], {}).values())
         o["completed_pcs"] = sum(int(it.get("quantity") or 0) for it in o["dispatched_items"])
         o["pending_pcs"] = sum(int(it.get("quantity") or 0) for it in (o.get("items") or []))
@@ -2348,6 +2355,17 @@ async def resolve_discrepancy(oid: str, body: DiscrepancyResolveIn,
     if not has_action_permission(user, need):
         raise HTTPException(status_code=403, detail="You don't have permission for this action.")
 
+    disp_before = None
+    if body.dispatch_id and action == "clear":
+        disp_before = await db.dispatches.find_one(
+            {"id": body.dispatch_id}, {"_id": 0, "order_ids": 1, "order_fully_dispatched": 1, "updated_at": 1})
+    await db.discrepancy_undo.delete_many({"order_id": oid})
+    await db.discrepancy_undo.insert_one({
+        "order_id": oid, "action": action, "at": now_iso(),
+        "by": user.get("email") or user.get("username") or "",
+        "order_before": order, "dispatch_id": body.dispatch_id, "dispatch_before": disp_before,
+    })
+
     if action == "delete":
         await db.orders.delete_one({"id": oid})
         return {"ok": True, "action": action, "deleted": True}
@@ -2421,6 +2439,25 @@ async def resolve_discrepancy(oid: str, body: DiscrepancyResolveIn,
     return {"ok": True, "action": action,
             "fully_dispatched": fully_dispatched,
             "order": await db.orders.find_one({"id": oid}, {"_id": 0})}
+
+
+@api_router.post("/orders/{oid}/undo-discrepancy")
+async def undo_discrepancy(oid: str, user=Depends(require_action("edit:orders"))):
+    """Revert the last discrepancy resolution (clear / update_date / keep / delete)."""
+    entry = await db.discrepancy_undo.find_one({"order_id": oid}, {"_id": 0})
+    if not entry:
+        raise HTTPException(status_code=404, detail="Nothing to undo for this order")
+    before = entry["order_before"]
+    await db.orders.replace_one({"id": oid}, before, upsert=True)
+    db_before = entry.get("dispatch_before")
+    if entry.get("dispatch_id") and db_before is not None:
+        await db.dispatches.update_one({"id": entry["dispatch_id"]}, {"$set": {
+            "order_ids": db_before.get("order_ids") or [],
+            "order_fully_dispatched": bool(db_before.get("order_fully_dispatched")),
+            "updated_at": now_iso(),
+        }})
+    await db.discrepancy_undo.delete_many({"order_id": oid})
+    return {"ok": True, "undone": entry["action"], "order": await db.orders.find_one({"id": oid}, {"_id": 0})}
 
 
 # ======================== Dashboard Summary ========================

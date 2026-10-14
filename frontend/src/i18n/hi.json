@@ -167,7 +167,16 @@
     },
     "progress": "{{total}} में से {{done}} पीस पूरे · {{pending}} बाकी",
     "slipCompleted": "{{pcs}} पीस पूरे",
-    "slipDeleted": "स्लिप #{{n}} डिलीट हो चुकी है"
+    "slipDeleted": "स्लिप #{{n}} डिलीट हो चुकी है",
+    "discUndo": "पूर्ववत करें",
+    "discUndone": "पूर्ववत हो गया — discrepancy फिर से दिख रही है",
+    "discResolvedAs": "टाइमिंग discrepancy हल किया: {{action}} · {{date}}",
+    "discActName": {
+      "clear": "क्लियर किया",
+      "update_date": "तारीख बदली",
+      "keep": "पेंडिंग रखा",
+      "delete": "डिलीट किया"
+    }
   },
   "newOrder": {
     "overline": "नया ऑर्डर",
