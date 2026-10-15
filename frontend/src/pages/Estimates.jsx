@@ -108,7 +108,7 @@ export default function Estimates() {
   const convertToOrder = (rec) => {
     confirm({
       title: `Estimate #${rec.estimate_no} → Order?`,
-      description: `${rec.customer_name} ke liye naya Pending order banega, estimate ke rate ke saath. Dispatch slip mein yahi rate lagega.`,
+      description: `A new Pending order will be created for ${rec.customer_name} using the estimate rates. Dispatch slips for this order will use the same rates.`,
       confirmLabel: "Create order",
       cancelLabel: "Cancel",
       onConfirm: async () => {

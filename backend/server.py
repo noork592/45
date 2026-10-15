@@ -2490,14 +2490,14 @@ class DiscResyncIn(BaseModel):
 
 
 @api_router.post("/orders/discrepancy-resync")
-async def discrepancy_resync(dry_run: bool = True, deep_days: int = 30,
+async def discrepancy_resync(dry_run: bool = True,
                              body: Optional[DiscResyncIn] = None, admin=Depends(require_admin)):
     """Re-check every 'Possible timing discrepancy' AND deep-scan for ones the
     warning missed (slips older than the warning window, or other unlinked
     slips) whose qty is still free. Free slip qty → applied (clear); flagged
     but already used by another order → false alarm (keep). All undoable."""
     pend = await list_orders(status_filter="Pending", user=admin)
-    deep_days = max(deep_days, int((await _get_settings_doc()).get("discrepancy_window_days", 2)) + 10)
+    deep_days = int((await _get_settings_doc()).get("discrepancy_window_days", 2))
     cands: Dict[str, Dict[str, Any]] = {}
     for o in pend:
         if o.get("discrepancy"):
@@ -2505,7 +2505,7 @@ async def discrepancy_resync(dry_run: bool = True, deep_days: int = 30,
             cands[o["id"]] = {"o": o, "slips": {d["dispatch_id"]: d}, "missed": False}
     disp_cache: Dict[str, List[Dict[str, Any]]] = {}
     for o in pend:
-        if o["id"] in cands or o.get("discrepancy_dismissed"):
+        if o.get("discrepancy_dismissed") and o["id"] not in cands:
             continue
         entered = _parse_iso(o.get("created_at"))
         oday = str(o.get("order_date") or o.get("created_at") or "")[:10]
@@ -2528,7 +2528,9 @@ async def discrepancy_resync(dry_run: bool = True, deep_days: int = 30,
                 continue  # normal resync already covers slips on/after the order date
             if any(li.get("item_id") in skus for li in (d.get("items") or [])):
                 found[d["id"]] = {"dispatch_id": d["id"], "slip_no": d.get("slip_no"), "dispatched_at": d.get("dispatched_at")}
-        if found:
+        if o["id"] in cands:
+            cands[o["id"]]["slips"].update(found)  # every slip in the window, not just the latest
+        elif found:
             cands[o["id"]] = {"o": o, "slips": found, "missed": True}
 
     if body and body.order_ids is not None:
