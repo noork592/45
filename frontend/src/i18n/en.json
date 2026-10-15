@@ -715,7 +715,7 @@
   },
   "discResync": {
     "title": "Resync timing discrepancies",
-    "desc": "Re-checks every 'Possible timing discrepancy'. If the earlier slip was not used by any other order, it is applied to this order; if another order already used it, the warning is removed as a false alarm.",
+    "desc": "Re-checks every 'Possible timing discrepancy' and also searches for ones the warning missed (older slips with unused qty). Unused slip qty is applied to the order; if another order already used the slip, the warning is removed as a false alarm.",
     "checkBtn": "Check discrepancies",
     "applyBtn": "Apply to {{n}} orders",
     "confirm": "Resolve {{n}} discrepancies automatically? Each one can be undone from the order.",
@@ -727,6 +727,10 @@
     "clearPart": "Slip applied · Pending {{from}} → {{to}}",
     "keep": "Slip used by another order → remove warning",
     "allGood": "No timing discrepancies — nothing to fix",
-    "undoHint": "Every change can be undone from the order (Undo)."
+    "undoHint": "Every change can be undone from the order (Undo).",
+    "statMissed": "Missed by warning",
+    "missedBadge": "Missed",
+    "missedWhy": "Not shown as a warning — an older slip (before the order was entered on {{entered}}) still has unused qty for this order's items.",
+    "selectAll": "Select all ({{n}}/{{total}})"
   }
 }

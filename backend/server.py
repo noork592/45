@@ -2475,57 +2475,117 @@ async def resolve_discrepancy(oid: str, body: DiscrepancyResolveIn,
             "order": await db.orders.find_one({"id": oid}, {"_id": 0})}
 
 
+def _parse_iso(s):
+    if not s:
+        return None
+    try:
+        d = datetime.fromisoformat(str(s).replace("Z", "+00:00")) if isinstance(s, str) else s
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+class DiscResyncIn(BaseModel):
+    order_ids: Optional[List[str]] = None  # restrict apply to these orders
+
+
 @api_router.post("/orders/discrepancy-resync")
-async def discrepancy_resync(dry_run: bool = True, admin=Depends(require_admin)):
-    """Re-check every 'Possible timing discrepancy'. If the earlier slip's qty is
-    still free it is applied to the order (clear); if another order already used
-    it, the flag is a false alarm and is dismissed (keep). Both are undoable."""
+async def discrepancy_resync(dry_run: bool = True, deep_days: int = 30,
+                             body: Optional[DiscResyncIn] = None, admin=Depends(require_admin)):
+    """Re-check every 'Possible timing discrepancy' AND deep-scan for ones the
+    warning missed (slips older than the warning window, or other unlinked
+    slips) whose qty is still free. Free slip qty → applied (clear); flagged
+    but already used by another order → false alarm (keep). All undoable."""
     pend = await list_orders(status_filter="Pending", user=admin)
-    flagged = [o for o in pend if o.get("discrepancy")]
+    deep_days = max(deep_days, int((await _get_settings_doc()).get("discrepancy_window_days", 2)) + 10)
+    cands: Dict[str, Dict[str, Any]] = {}
+    for o in pend:
+        if o.get("discrepancy"):
+            d = o["discrepancy"]
+            cands[o["id"]] = {"o": o, "slips": {d["dispatch_id"]: d}, "missed": False}
+    disp_cache: Dict[str, List[Dict[str, Any]]] = {}
+    for o in pend:
+        if o["id"] in cands or o.get("discrepancy_dismissed"):
+            continue
+        entered = _parse_iso(o.get("created_at"))
+        oday = str(o.get("order_date") or o.get("created_at") or "")[:10]
+        skus = {it.get("item_id") for it in (o.get("items") or []) if it.get("item_id")}
+        if not entered or not skus:
+            continue
+        cid = o.get("customer_id") or ""
+        if cid not in disp_cache:
+            disp_cache[cid] = await db.dispatches.find(
+                {"customer_id": cid}, {"_id": 0, "id": 1, "slip_no": 1, "dispatched_at": 1, "items": 1, "order_id": 1, "order_ids": 1}
+            ).to_list(5000)
+        found: Dict[str, Any] = {}
+        for d in disp_cache[cid]:
+            if d.get("order_id") == o["id"] or o["id"] in (d.get("order_ids") or []):
+                continue
+            ddt = _parse_iso(d.get("dispatched_at"))
+            if not ddt or not (ddt < entered) or (entered - ddt) > timedelta(days=deep_days):
+                continue
+            if str(d.get("dispatched_at") or "")[:10] >= oday:
+                continue  # normal resync already covers slips on/after the order date
+            if any(li.get("item_id") in skus for li in (d.get("items") or [])):
+                found[d["id"]] = {"dispatch_id": d["id"], "slip_no": d.get("slip_no"), "dispatched_at": d.get("dispatched_at")}
+        if found:
+            cands[o["id"]] = {"o": o, "slips": found, "missed": True}
+
+    if body and body.order_ids is not None:
+        keep_ids = set(body.order_ids)
+        cands = {k: v for k, v in cands.items() if k in keep_ids}
     by_cust: Dict[str, List[Dict[str, Any]]] = {}
-    for o in flagged:
-        by_cust.setdefault(o.get("customer_id") or "", []).append(o)
+    for c in cands.values():
+        by_cust.setdefault(c["o"].get("customer_id") or "", []).append(c)
     who = admin.get("email") or ""
     out: List[Dict[str, Any]] = []
     for cid, group in by_cust.items():
-        allow = {o["id"]: o["discrepancy"]["dispatch_id"] for o in group}
-        snaps: Dict[str, Any] = {}
+        allow = {c["o"]["id"]: set(c["slips"].keys()) for c in group}
         if not dry_run:
-            for o in group:
-                raw = await db.orders.find_one({"id": o["id"]}, {"_id": 0})
-                dsp = await db.dispatches.find_one({"id": allow[o["id"]]}, {"_id": 0, "order_ids": 1, "order_fully_dispatched": 1})
-                snaps[o["id"]] = (raw, dsp)
+            for c in group:
+                c["raw"] = await db.orders.find_one({"id": c["o"]["id"]}, {"_id": 0})
+                c["dsp"] = await db.dispatches.find(
+                    {"id": {"$in": list(c["slips"].keys())}}, {"_id": 0, "id": 1, "order_ids": 1, "order_fully_dispatched": 1}
+                ).to_list(100)
         ch = await _reconcile_customer_orders(cid, apply=not dry_run, actor=who, allow_before=allow)
-        chmap = {c["order_id"]: c for c in ch}
-        for o in group:
-            dsc = o["discrepancy"]
-            c = chmap.get(o["id"])
-            action = "clear" if c else "keep"
+        chmap = {x["order_id"]: x for x in ch}
+        for c in group:
+            o = c["o"]
+            res = chmap.get(o["id"])
+            if c["missed"] and not res:
+                continue  # older slip already used elsewhere → not a real discrepancy
+            action = "clear" if res else "keep"
+            first = sorted(c["slips"].values(), key=lambda x: str(x.get("dispatched_at") or ""))[-1]
+            used = (res or {}).get("slip_lines") or []
+            pend_now = sum(int(i.get("quantity") or 0) for i in (o.get("items") or []))
             out.append({
-                "order_id": o["id"], "customer_name": o.get("customer_name"),
+                "order_id": o["id"], "customer_name": o.get("customer_name"), "missed": c["missed"],
                 "order_date": str(o.get("order_date") or "")[:10], "entered_at": o.get("created_at"),
-                "slip_no": dsc.get("slip_no"), "dispatched_at": dsc.get("dispatched_at"),
-                "action": action, "slip_lines": (c or {}).get("slip_lines") or [],
-                "pending_before": sum(int(i.get("quantity") or 0) for i in (o.get("items") or [])),
-                "pending_after": (c or {}).get("pending_after", sum(int(i.get("quantity") or 0) for i in (o.get("items") or []))),
-                "new_status": (c or {}).get("new_status", "Pending"),
+                "slip_no": used[0]["slip_no"] if used else first.get("slip_no"),
+                "dispatched_at": used[0]["date"] if used else first.get("dispatched_at"),
+                "action": action, "slip_lines": used,
+                "pending_before": pend_now, "pending_after": (res or {}).get("pending_after", pend_now),
+                "new_status": (res or {}).get("new_status", "Pending"),
             })
             if dry_run:
                 continue
-            raw, dsp = snaps[o["id"]]
             await db.discrepancy_undo.delete_many({"order_id": o["id"]})
             await db.discrepancy_undo.insert_one({
                 "order_id": o["id"], "action": action, "at": now_iso(), "by": who,
-                "order_before": raw, "dispatch_id": allow[o["id"]] if action == "clear" else None,
-                "dispatch_before": dsp if action == "clear" else None,
+                "order_before": c["raw"], "dispatch_id": None, "dispatch_before": None,
+                "dispatches_before": c["dsp"] if action == "clear" else [],
             })
             await db.orders.update_one({"id": o["id"]}, {"$set": {"discrepancy_dismissed": True}})
-            await log_order_activity(o["id"], f"discrepancy_{action}", who, slip_no=dsc.get("slip_no"), note="resync")
+            await log_order_activity(o["id"], f"discrepancy_{action}", who,
+                                     slip_no=used[0]["slip_no"] if used else first.get("slip_no"),
+                                     note="resync (missed)" if c["missed"] else "resync")
+    out.sort(key=lambda x: (not x["missed"], x["action"] != "clear"))
     return {
         "dry_run": dry_run, "count": len(out), "changes": out,
         "to_clear": sum(1 for c in out if c["action"] == "clear"),
         "to_keep": sum(1 for c in out if c["action"] == "keep"),
-        "total_pcs": sum(sum(sum(i["quantity"] for i in s["items"]) for s in c["slip_lines"]) for c in out),
+        "missed": sum(1 for c in out if c["missed"]),
+        "total_pcs": sum(sum(sum(i["quantity"] for i in sl["items"]) for sl in c["slip_lines"]) for c in out),
         "checked_at": now_iso(),
     }
 
@@ -2543,6 +2603,12 @@ async def undo_discrepancy(oid: str, user=Depends(require_action("edit:orders"))
         raise HTTPException(status_code=404, detail="Nothing to undo for this order")
     before = entry["order_before"]
     await db.orders.replace_one({"id": oid}, before, upsert=True)
+    for d in entry.get("dispatches_before") or []:
+        await db.dispatches.update_one({"id": d["id"]}, {"$set": {
+            "order_ids": d.get("order_ids") or [],
+            "order_fully_dispatched": bool(d.get("order_fully_dispatched")),
+            "updated_at": now_iso(),
+        }})
     db_before = entry.get("dispatch_before")
     if entry.get("dispatch_id") and db_before is not None:
         await db.dispatches.update_one({"id": entry["dispatch_id"]}, {"$set": {
@@ -5863,7 +5929,7 @@ def _order_sort_key(o: Dict[str, Any]):
 
 async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = True,
                                      actor: Optional[str] = None,
-                                     allow_before: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+                                     allow_before: Optional[Dict[str, set]] = None) -> List[Dict[str, Any]]:
     """Apply slip quantity that is not yet attributed to any order (e.g. order
     entered after the slip, slip reassigned to this party) to the customer's
     Pending orders. Only slips dated on/after the order date count. Orders are
@@ -5928,7 +5994,7 @@ async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = T
         take: Dict[str, int] = {}
         used: List[Dict[str, Any]] = []
         for f in free:
-            if f["day"] < oday and (allow_before or {}).get(o["id"]) != f["d"]["id"]:
+            if f["day"] < oday and f["d"]["id"] not in (allow_before or {}).get(o["id"], ()):
                 continue
             per: Dict[str, int] = {}
             for iid, need in want.items():
