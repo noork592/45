@@ -710,6 +710,7 @@
     "discrepancy_update_date": "Discrepancy: order date updated",
     "discrepancy_keep": "Discrepancy: kept pending",
     "discrepancy_delete": "Discrepancy: entry deleted",
-    "discrepancy_undo": "Discrepancy action undone"
+    "discrepancy_undo": "Discrepancy action undone",
+    "from_estimate": "Created from estimate"
   }
 }

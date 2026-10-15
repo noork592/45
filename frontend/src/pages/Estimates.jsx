@@ -13,6 +13,8 @@ import ItemSearchInput from "@/components/ItemSearchInput";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { useConfirm } from "@/lib/useConfirm";
 import { useAuth } from "@/lib/auth";
+import { useNavigate } from "react-router-dom";
+import { ClipboardCheck } from "lucide-react";
 
 const EMPTY_ROW = { item_id: "", item_name: "", product_name: "", quantity: "", price: "" };
 const toItem = (r) => ({ item_id: r.item_id, quantity: Number(r.quantity), ...(r.price !== "" && r.price != null && !isNaN(Number(r.price)) ? { price_override: Number(r.price) } : {}) });
@@ -100,6 +102,31 @@ export default function Estimates() {
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Could not open estimate");
     }
+  };
+
+  const navigate = useNavigate();
+  const convertToOrder = (rec) => {
+    confirm({
+      title: `Estimate #${rec.estimate_no} → Order?`,
+      description: `${rec.customer_name} ke liye naya Pending order banega, estimate ke rate ke saath. Dispatch slip mein yahi rate lagega.`,
+      confirmLabel: "Create order",
+      cancelLabel: "Cancel",
+      onConfirm: async () => {
+        closeConfirm();
+        try {
+          const { data } = await api.post(`/estimates/${rec.id}/convert-to-order`, {});
+          const oid = data.order.id;
+          setRecords((prev) => prev.map((r) => (r.id === rec.id ? { ...r, order_id: oid } : r)));
+          setEstimate((prev) => (prev && prev.id === rec.id ? { ...prev, order_id: oid } : prev));
+          toast.success(`Order created from Estimate #${rec.estimate_no}`, {
+            duration: 8000,
+            action: { label: "Open order", onClick: () => navigate("/orders", { state: { highlightId: oid } }) },
+          });
+        } catch (e) {
+          toast.error(e?.response?.data?.detail || "Could not create order");
+        }
+      },
+    });
   };
 
   const deleteRecord = (rec) => {
@@ -299,6 +326,19 @@ export default function Estimates() {
             <Button variant="outline" onClick={resetAll} className="rounded-sm h-10">
               New estimate
             </Button>
+            {estimate.id && (estimate.order_id ? (
+              <Button variant="outline" onClick={() => navigate("/orders", { state: { highlightId: estimate.order_id } })}
+                      className="rounded-sm h-10 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      data-testid="estimate-open-order-btn">
+                <ClipboardCheck className="w-4 h-4 mr-1.5" /> Order created · View
+              </Button>
+            ) : (
+              <Button onClick={() => convertToOrder({ id: estimate.id, estimate_no: estimate.estimate_no, customer_name: estimate.customer?.name || estimate.customer_name })}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm h-10"
+                      data-testid="estimate-convert-order-btn">
+                <ClipboardCheck className="w-4 h-4 mr-1.5" /> Convert to Order
+              </Button>
+            ))}
             <Button
               onClick={() => window.print()}
               className="bg-[#E65100] hover:bg-[#CC4800] text-white rounded-sm h-10"
@@ -412,6 +452,20 @@ export default function Estimates() {
                       </td>
                       <td className="py-2.5 px-4">
                         <div className="flex items-center justify-end gap-1.5">
+                          {r.order_id ? (
+                            <Button size="sm" variant="ghost"
+                                    onClick={() => navigate("/orders", { state: { highlightId: r.order_id } })}
+                                    data-testid={`estimate-record-order-${r.estimate_no}`}
+                                    className="h-8 rounded-sm text-emerald-700 hover:bg-emerald-50 font-bold">
+                              <ClipboardCheck className="w-3.5 h-3.5 mr-1" /> Order ✓
+                            </Button>
+                          ) : (
+                            <Button size="sm" onClick={() => convertToOrder(r)}
+                                    data-testid={`estimate-record-convert-${r.estimate_no}`}
+                                    className="h-8 rounded-sm bg-emerald-600 hover:bg-emerald-700 text-white">
+                              <ClipboardCheck className="w-3.5 h-3.5 mr-1" /> To Order
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"

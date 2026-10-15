@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -41,6 +41,7 @@ function ItemChip({ it, tone = "pending", testid }) {
           className={`text-xs px-2 py-1 rounded-sm border ${cls}`}>
       <span className="font-semibold">{it.item_name || it.product_name}</span>
       {it.variant ? ` (${it.variant})` : ""}: <span className="font-mono-num font-bold">{it.quantity}</span>
+      {it.rate != null && <span className="ml-1 font-mono-num text-[10px] font-bold text-emerald-700">@₹{it.rate}</span>}
       {it.product_name && it.item_name && it.product_name !== it.item_name && (
         <span className={`text-[10px] ml-1 ${subCls}`}>· {it.product_name}</span>
       )}
@@ -65,7 +66,8 @@ export default function Orders() {
   const [q, setQ] = useState(searchParams.get("q") || "");
   const [filter, setFilter] = useState(searchParams.get("status") || "all");
   const [editTarget, setEditTarget] = useState(null);
-  const [highlightId, setHighlightId] = useState(null);
+  const location = useLocation();
+  const [highlightId, setHighlightId] = useState(location.state?.highlightId || null);
   const [discCount, setDiscCount] = useState(0);
   const { state: confirmState, confirm, close: closeConfirm } = useConfirm();
   const [slipView, setSlipView] = useState(null);

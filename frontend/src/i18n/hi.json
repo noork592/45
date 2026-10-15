@@ -710,6 +710,7 @@
     "discrepancy_update_date": "Discrepancy: ऑर्डर तारीख बदली",
     "discrepancy_keep": "Discrepancy: पेंडिंग रखा",
     "discrepancy_delete": "Discrepancy: एंट्री डिलीट",
-    "discrepancy_undo": "Discrepancy action पूर्ववत"
+    "discrepancy_undo": "Discrepancy action पूर्ववत",
+    "from_estimate": "एस्टिमेट से ऑर्डर बना"
   }
 }

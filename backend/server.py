@@ -283,6 +283,7 @@ class OrderItemIn(BaseModel):
     # Strict item-wise: every order line MUST identify a specific SKU.
     item_id: str
     item_name: str
+    rate: Optional[float] = None  # agreed net price/pc (e.g. from an estimate)
 
 
 class OrderIn(BaseModel):
@@ -293,6 +294,8 @@ class OrderIn(BaseModel):
     notes: Optional[str] = ""
     merge_with_pending: bool = False
     clear_previous_pending: bool = False
+    estimate_id: Optional[str] = None
+    estimate_no: Optional[int] = None
 
 
 class OrderStatusUpdate(BaseModel):
@@ -2012,6 +2015,8 @@ async def create_order(body: OrderIn, user=Depends(require_action("add:orders"))
         "created_by": user["email"],
         "created_at": now_iso(),
         "updated_at": now_iso(),
+        "estimate_id": body.estimate_id,
+        "estimate_no": body.estimate_no,
     }
     await db.orders.insert_one(doc)
     await log_order_activity(doc["id"], "created", user["email"], doc["items"])
@@ -2320,7 +2325,8 @@ async def admin_update_order(oid: str, body: OrderUpdate, admin=Depends(require_
         missing = [iid for iid in item_ids if iid not in found_ids]
         if missing:
             raise HTTPException(status_code=400, detail=f"Unknown item_id(s): {missing}")
-        update["items"] = [it.model_dump() for it in body.items]
+        old_rates = {i.get("item_id"): i.get("rate") for i in (existing.get("items") or []) + (existing.get("original_items") or []) if i.get("rate") is not None}
+        update["items"] = [{**it.model_dump(), "rate": it.rate if it.rate is not None else old_rates.get(it.item_id)} for it in body.items]
     if body.order_date is not None:
         update["order_date"] = body.order_date
     if body.delivery_date is not None:
@@ -2874,6 +2880,8 @@ async def dispatch_execute(body: DispatchExecuteIn, user=Depends(require_action(
             alloc.item_id,
             line.get("product_name") or "",
         )
+        if line.get("rate") is not None:
+            pricing = {**pricing, "net_unit_price": round(float(line["rate"]), 2), "price_override": True}
         dispatched_lines.append({
             "item_id": alloc.item_id,
             "item_name": line.get("item_name") or line.get("product_name"),
@@ -3890,9 +3898,39 @@ async def list_estimates(
             "cash_amount": totals.get("cash_amount", 0),
             "price_list_name": d.get("price_list_name"),
             "created_at": d.get("created_at"),
+            "order_id": d.get("order_id"),
             "created_by": d.get("created_by"),
         })
     return {"estimates": out, "count": len(out)}
+
+
+class EstimateToOrderIn(BaseModel):
+    merge_with_pending: bool = False
+    notes: Optional[str] = ""
+
+
+@api_router.post("/estimates/{eid}/convert-to-order")
+async def convert_estimate_to_order(eid: str, body: EstimateToOrderIn,
+                                    user=Depends(require_action("add:orders"))):
+    est = await db.estimates.find_one({"id": eid}, {"_id": 0})
+    if not est:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+    if est.get("order_id") and await db.orders.count_documents({"id": est["order_id"]}, limit=1):
+        raise HTTPException(status_code=409, detail=f"Estimate #{est.get('estimate_no')} is already converted to an order")
+    items = [OrderItemIn(
+        item_id=l["item_id"], item_name=l.get("item_name") or "", product_name=l.get("product_name") or "",
+        quantity=int(round(float(l.get("quantity") or 0))), rate=float(l.get("net_unit_price") or 0),
+    ) for l in est.get("lines") or [] if l.get("found") and l.get("item_id") and float(l.get("quantity") or 0) >= 1]
+    if not items:
+        raise HTTPException(status_code=400, detail="Estimate has no valid items")
+    note = f"From Estimate #{est.get('estimate_no')}" + (f" | {body.notes}" if body.notes else "")
+    order = await create_order(OrderIn(
+        customer_id=est["customer_id"], items=items, notes=note,
+        merge_with_pending=body.merge_with_pending, estimate_id=eid, estimate_no=est.get("estimate_no"),
+    ), user)
+    await db.estimates.update_one({"id": eid}, {"$set": {"order_id": order["id"], "converted_at": now_iso(), "converted_by": user["email"]}})
+    await log_order_activity(order["id"], "from_estimate", user["email"], [i.model_dump() for i in items], note=f"#{est.get('estimate_no')}")
+    return {"order": order, "estimate_no": est.get("estimate_no")}
 
 
 @api_router.get("/estimates/{eid}")
@@ -5744,6 +5782,22 @@ async def _deduct_off_order_from_pending_orders(
     return touched
 
 
+async def _apply_order_rates(lines: List[Dict[str, Any]], alloc: Dict[str, Dict[str, int]]) -> None:
+    """Slip lines consumed from an order with an agreed rate use that rate."""
+    if not alloc:
+        return
+    rates: Dict[str, float] = {}
+    async for o in db.orders.find({"id": {"$in": list(alloc.keys())}}, {"_id": 0, "id": 1, "items": 1, "original_items": 1}):
+        for it in (o.get("original_items") or []) + (o.get("items") or []):
+            if it.get("rate") is not None and it.get("item_id") in alloc.get(o["id"], {}):
+                rates.setdefault(it["item_id"], float(it["rate"]))
+    for li in lines:
+        r = rates.get(li.get("item_id"))
+        if r is not None:
+            li["net_unit_price"] = round(r, 2)
+            li["price_override"] = True
+
+
 def _alloc_inc(alloc: Dict[str, Dict[str, int]]) -> Dict[str, int]:
     return {f"order_alloc.{oid}.{iid}": q for oid, m in alloc.items() for iid, q in m.items()}
 
@@ -6002,6 +6056,7 @@ async def dispatch_off_order(body: OffOrderDispatchIn, user=Depends(require_acti
     # orders FIFO (Jan 2026). Walk-ins and excess qty are unaffected.
     fifo_alloc: Dict[str, Dict[str, int]] = {}
     touched_order_ids = await _deduct_off_order_from_pending_orders(customer_id, dispatched_lines, fifo_alloc)
+    await _apply_order_rates(dispatched_lines, fifo_alloc)
     any_order_fully_dispatched = False
     if touched_order_ids:
         cleared = await db.orders.count_documents(
