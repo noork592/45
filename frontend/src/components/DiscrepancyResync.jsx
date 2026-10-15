@@ -36,7 +36,7 @@ function Row({ c, t, checked, onToggle, selectable }) {
             </span>
           )}
           <span className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700">
-            <Truck className="w-3 h-3" /> {t("orders.slip", "Slip")} #{c.slip_no} · {fmt(c.dispatched_at)}
+            <Truck className="w-3 h-3" /> {t("orders.slip", "Slip")} {c.slip_lines.length > 1 ? c.slip_lines.map((s) => `#${s.slip_no}`).join(", ") : `#${c.slip_no} · ${fmt(c.dispatched_at)}`}
           </span>
           <span className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded-sm border ${clear ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-600 border-slate-200"}`}>
             {clear
