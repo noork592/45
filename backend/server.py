@@ -5931,7 +5931,8 @@ def _order_sort_key(o: Dict[str, Any]):
 
 async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = True,
                                      actor: Optional[str] = None,
-                                     allow_before: Optional[Dict[str, set]] = None) -> List[Dict[str, Any]]:
+                                     allow_before: Optional[Dict[str, set]] = None,
+                                     only: Optional[set] = None) -> List[Dict[str, Any]]:
     """Apply slip quantity that is not yet attributed to any order (e.g. order
     entered after the slip, slip reassigned to this party) to the customer's
     Pending orders. Only slips dated on/after the order date count. Orders are
@@ -6011,6 +6012,8 @@ async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = T
                 used.append({"d": f["d"], "per": per, "heur": f["heur"]})
         if not pending or not take:
             continue
+        if only is not None and o["id"] not in only:
+            continue  # unselected: qty stays reserved (same as preview) but nothing changes
         items: List[Dict[str, Any]] = []
         for it in o.get("items") or []:
             same = next((x for x in items if it.get("item_id") and x.get("item_id") == it.get("item_id")), None)
@@ -6059,13 +6062,19 @@ async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = T
     return changes
 
 
+class ReconcileIn(BaseModel):
+    order_ids: Optional[List[str]] = None
+
+
 @api_router.post("/orders/reconcile")
-async def reconcile_orders(dry_run: bool = True, admin=Depends(require_admin)):
+async def reconcile_orders(dry_run: bool = True, body: Optional[ReconcileIn] = None, admin=Depends(require_admin)):
     """Re-sync Pending orders with dispatch slips that were never applied to them."""
     cids = await db.orders.distinct("customer_id", {"status": "Pending"})
     out: List[Dict[str, Any]] = []
     for cid in cids:
-        out.extend(await _reconcile_customer_orders(cid, apply=not dry_run, actor=admin.get("email")))
+        out.extend(await _reconcile_customer_orders(
+            cid, apply=not dry_run, actor=admin.get("email"),
+            only=set(body.order_ids) if body and body.order_ids is not None else None))
     pending_after = await db.orders.count_documents({"status": "Pending"})
     return {
         "dry_run": dry_run, "count": len(out), "changes": out,
