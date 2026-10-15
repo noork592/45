@@ -712,5 +712,21 @@
     "discrepancy_delete": "Discrepancy: entry deleted",
     "discrepancy_undo": "Discrepancy action undone",
     "from_estimate": "Created from estimate"
+  },
+  "discResync": {
+    "title": "Resync timing discrepancies",
+    "desc": "Re-checks every 'Possible timing discrepancy'. If the earlier slip was not used by any other order, it is applied to this order; if another order already used it, the warning is removed as a false alarm.",
+    "checkBtn": "Check discrepancies",
+    "applyBtn": "Apply to {{n}} orders",
+    "confirm": "Resolve {{n}} discrepancies automatically? Each one can be undone from the order.",
+    "applied": "{{n}} discrepancies resolved",
+    "statTotal": "Discrepancies",
+    "statClear": "Will be cleared",
+    "statKeep": "False alarms",
+    "clearFull": "Slip applied → Dispatched",
+    "clearPart": "Slip applied · Pending {{from}} → {{to}}",
+    "keep": "Slip used by another order → remove warning",
+    "allGood": "No timing discrepancies — nothing to fix",
+    "undoHint": "Every change can be undone from the order (Undo)."
   }
 }

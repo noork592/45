@@ -13,6 +13,7 @@ import OrderEditDialog from "@/components/OrderEditDialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SlipHistory from "@/components/SlipHistory";
 import ResyncOrders from "@/components/ResyncOrders";
+import DiscrepancyResync from "@/components/DiscrepancyResync";
 import SlipPreviewDialog from "@/components/SlipPreviewDialog";
 import OrderActivityDialog from "@/components/OrderActivityDialog";
 import { useConfirm } from "@/lib/useConfirm";
@@ -215,7 +216,9 @@ export default function Orders() {
         </Link>
       </div>
 
-      {isAdmin && <ResyncOrders className="w-full" onApplied={() => load({ silent: true })} />}
+      {isAdmin && (filter === "discrepancy"
+        ? <DiscrepancyResync onApplied={() => load({ silent: true })} />
+        : <ResyncOrders className="w-full" onApplied={() => load({ silent: true })} />)}
 
       <div className="bg-white border border-slate-200 rounded-sm">
         <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row gap-3 sm:items-center">

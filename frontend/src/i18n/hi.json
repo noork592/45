@@ -712,5 +712,21 @@
     "discrepancy_delete": "Discrepancy: एंट्री डिलीट",
     "discrepancy_undo": "Discrepancy action पूर्ववत",
     "from_estimate": "एस्टिमेट से ऑर्डर बना"
+  },
+  "discResync": {
+    "title": "टाइमिंग discrepancy रीसिंक",
+    "desc": "हर 'Possible timing discrepancy' को फिर से जाँचता है। अगर पहले वाली स्लिप किसी और ऑर्डर में नहीं लगी है तो उसे इस ऑर्डर में लगा देता है; अगर किसी और ऑर्डर में लग चुकी है तो warning हटा देता है (गलत अलार्म)।",
+    "checkBtn": "Discrepancy जाँचें",
+    "applyBtn": "{{n}} ऑर्डर पर लागू करें",
+    "confirm": "{{n}} discrepancy अपने-आप हल करें? हर एक को ऑर्डर से पूर्ववत किया जा सकता है।",
+    "applied": "{{n}} discrepancy हल हुईं",
+    "statTotal": "कुल discrepancy",
+    "statClear": "क्लियर होंगी",
+    "statKeep": "गलत अलार्म",
+    "clearFull": "स्लिप लगी → डिस्पैच",
+    "clearPart": "स्लिप लगी · पेंडिंग {{from}} → {{to}}",
+    "keep": "स्लिप दूसरे ऑर्डर में लगी → warning हटेगी",
+    "allGood": "कोई टाइमिंग discrepancy नहीं — कुछ ठीक करने की ज़रूरत नहीं",
+    "undoHint": "हर बदलाव ऑर्डर पर 'पूर्ववत करें' से वापस हो सकता है।"
   }
 }

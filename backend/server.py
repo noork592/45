@@ -2475,6 +2475,61 @@ async def resolve_discrepancy(oid: str, body: DiscrepancyResolveIn,
             "order": await db.orders.find_one({"id": oid}, {"_id": 0})}
 
 
+@api_router.post("/orders/discrepancy-resync")
+async def discrepancy_resync(dry_run: bool = True, admin=Depends(require_admin)):
+    """Re-check every 'Possible timing discrepancy'. If the earlier slip's qty is
+    still free it is applied to the order (clear); if another order already used
+    it, the flag is a false alarm and is dismissed (keep). Both are undoable."""
+    pend = await list_orders(status_filter="Pending", user=admin)
+    flagged = [o for o in pend if o.get("discrepancy")]
+    by_cust: Dict[str, List[Dict[str, Any]]] = {}
+    for o in flagged:
+        by_cust.setdefault(o.get("customer_id") or "", []).append(o)
+    who = admin.get("email") or ""
+    out: List[Dict[str, Any]] = []
+    for cid, group in by_cust.items():
+        allow = {o["id"]: o["discrepancy"]["dispatch_id"] for o in group}
+        snaps: Dict[str, Any] = {}
+        if not dry_run:
+            for o in group:
+                raw = await db.orders.find_one({"id": o["id"]}, {"_id": 0})
+                dsp = await db.dispatches.find_one({"id": allow[o["id"]]}, {"_id": 0, "order_ids": 1, "order_fully_dispatched": 1})
+                snaps[o["id"]] = (raw, dsp)
+        ch = await _reconcile_customer_orders(cid, apply=not dry_run, actor=who, allow_before=allow)
+        chmap = {c["order_id"]: c for c in ch}
+        for o in group:
+            dsc = o["discrepancy"]
+            c = chmap.get(o["id"])
+            action = "clear" if c else "keep"
+            out.append({
+                "order_id": o["id"], "customer_name": o.get("customer_name"),
+                "order_date": str(o.get("order_date") or "")[:10], "entered_at": o.get("created_at"),
+                "slip_no": dsc.get("slip_no"), "dispatched_at": dsc.get("dispatched_at"),
+                "action": action, "slip_lines": (c or {}).get("slip_lines") or [],
+                "pending_before": sum(int(i.get("quantity") or 0) for i in (o.get("items") or [])),
+                "pending_after": (c or {}).get("pending_after", sum(int(i.get("quantity") or 0) for i in (o.get("items") or []))),
+                "new_status": (c or {}).get("new_status", "Pending"),
+            })
+            if dry_run:
+                continue
+            raw, dsp = snaps[o["id"]]
+            await db.discrepancy_undo.delete_many({"order_id": o["id"]})
+            await db.discrepancy_undo.insert_one({
+                "order_id": o["id"], "action": action, "at": now_iso(), "by": who,
+                "order_before": raw, "dispatch_id": allow[o["id"]] if action == "clear" else None,
+                "dispatch_before": dsp if action == "clear" else None,
+            })
+            await db.orders.update_one({"id": o["id"]}, {"$set": {"discrepancy_dismissed": True}})
+            await log_order_activity(o["id"], f"discrepancy_{action}", who, slip_no=dsc.get("slip_no"), note="resync")
+    return {
+        "dry_run": dry_run, "count": len(out), "changes": out,
+        "to_clear": sum(1 for c in out if c["action"] == "clear"),
+        "to_keep": sum(1 for c in out if c["action"] == "keep"),
+        "total_pcs": sum(sum(sum(i["quantity"] for i in s["items"]) for s in c["slip_lines"]) for c in out),
+        "checked_at": now_iso(),
+    }
+
+
 @api_router.get("/orders/{oid}/activity")
 async def order_activity(oid: str, user=Depends(get_current_user)):
     return await db.order_activity.find({"order_id": oid}, {"_id": 0}).sort("at", -1).to_list(500)
@@ -5807,7 +5862,8 @@ def _order_sort_key(o: Dict[str, Any]):
 
 
 async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = True,
-                                     actor: Optional[str] = None) -> List[Dict[str, Any]]:
+                                     actor: Optional[str] = None,
+                                     allow_before: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
     """Apply slip quantity that is not yet attributed to any order (e.g. order
     entered after the slip, slip reassigned to this party) to the customer's
     Pending orders. Only slips dated on/after the order date count. Orders are
@@ -5872,7 +5928,7 @@ async def _reconcile_customer_orders(customer_id: Optional[str], apply: bool = T
         take: Dict[str, int] = {}
         used: List[Dict[str, Any]] = []
         for f in free:
-            if f["day"] < oday:
+            if f["day"] < oday and (allow_before or {}).get(o["id"]) != f["d"]["id"]:
                 continue
             per: Dict[str, int] = {}
             for iid, need in want.items():
