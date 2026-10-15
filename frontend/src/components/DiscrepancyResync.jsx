@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, Truck, X } from "lucide-react";
 
 const fmt = (d) => (d ? new Date(d).toLocaleDateString() : "");
 
@@ -102,10 +102,16 @@ export default function DiscrepancyResync({ onApplied }) {
               {res.dry_run && (
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <span className="text-[11px] text-slate-500">{t("discResync.undoHint")}</span>
+                  <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={() => setRes(null)} disabled={busy} data-testid="disc-resync-cancel-btn"
+                          className="rounded-sm h-10 px-4 font-bold">
+                    <X className="w-4 h-4 mr-1.5" /> {t("common.cancel", "Cancel")}
+                  </Button>
                   <Button onClick={() => run(false)} disabled={busy} data-testid="disc-resync-apply-btn"
                           className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-sm h-10 px-4 font-bold">
                     <CheckCircle2 className="w-4 h-4 mr-1.5" /> {t("discResync.applyBtn", { n: res.count })}
                   </Button>
+                  </div>
                 </div>
               )}
             </>
