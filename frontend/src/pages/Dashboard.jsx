@@ -8,8 +8,8 @@ const STAT_CARDS = [
   { key: "total_orders",      i18nKey: "total",      icon: Boxes,         accent: "text-slate-700",  testid: "stat-total",      to: "/orders" },
   { key: "dispatched_orders", i18nKey: "dispatched", icon: Truck,         accent: "text-blue-600",   testid: "stat-dispatched", to: "/orders?status=Dispatched" },
   { key: "pending_orders",    i18nKey: "pending",    icon: Package,       accent: "text-amber-600",  testid: "stat-pending",    to: "/orders?status=Pending" },
-  { key: "customers",         i18nKey: "customers",  icon: Users,         accent: "text-[#E65100]",  testid: "stat-customers",  to: "/customers" },
   { key: "cleared_orders",    i18nKey: "cleared",    icon: CheckCircle2,  accent: "text-green-600",  testid: "stat-cleared",    to: "/orders?status=Cleared" },
+  { key: "customers",         i18nKey: "customers",  icon: Users,         accent: "text-[#E65100]",  testid: "stat-customers",  to: "/customers" },
   { key: "products",          i18nKey: "products",   icon: Settings2,     accent: "text-violet-600", testid: "stat-products",   to: "/products" },
 ];
 
