@@ -176,7 +176,12 @@
       "update_date": "Date updated",
       "keep": "Kept pending",
       "delete": "Deleted"
-    }
+    },
+    "discSlipsCount": "{{n}} slips before entry",
+    "discUsable": "Will apply: {{n}} pcs",
+    "discUsed": "Already used by another order",
+    "discUsableTotal": "On Clear: {{n}} pcs applied · Pending after {{after}}",
+    "discNoneUsable": "All these slips were already used by other orders — likely a false alarm"
   },
   "newOrder": {
     "overline": "New Order",

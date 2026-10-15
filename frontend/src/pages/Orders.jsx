@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth";
 import OrderEditDialog from "@/components/OrderEditDialog";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import SlipHistory from "@/components/SlipHistory";
+import DiscrepancySlips from "@/components/DiscrepancySlips";
 import ResyncOrders from "@/components/ResyncOrders";
 import DiscrepancyResync from "@/components/DiscrepancyResync";
 import SlipPreviewDialog from "@/components/SlipPreviewDialog";
@@ -192,6 +193,7 @@ export default function Orders() {
       await api.post(`/orders/${order.id}/resolve-discrepancy`, {
         action,
         dispatch_id: order.discrepancy?.dispatch_id,
+        dispatch_ids: (order.discrepancy?.slips || []).map((x) => x.dispatch_id),
       });
       toast.success(action === "delete" ? t("orders.discDeleted") : t("orders.discResolved"), {
         duration: 8000,
@@ -361,11 +363,7 @@ export default function Orders() {
                                     entered: fmtDate(o.discrepancy.entered_at),
                                   })}
                                 </div>
-                                <div className="mt-1.5 flex flex-wrap gap-1">
-                                  {o.discrepancy.items?.map((it, i) => (
-                                    <ItemChip key={`disc-${i}`} it={it} tone="dispatched" />
-                                  ))}
-                                </div>
+                                <DiscrepancySlips disc={o.discrepancy} orderId={o.id} onOpenSlip={openSlip} />
                                 {canEditOrders && (
                                   <div className="mt-2 flex flex-wrap gap-1.5">
                                     <Button size="sm" onClick={() => resolveDiscrepancy(o, "clear")}
