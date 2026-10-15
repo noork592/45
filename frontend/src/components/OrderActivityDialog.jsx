@@ -33,7 +33,7 @@ function Entry({ a, t, onOpenSlip }) {
             {t("orders.slip", "Slip")} #{a.slip_no}
           </button>
         )}
-        {a.note && <span className="text-xs font-semibold text-slate-500">· {a.action === "discrepancy_undo" ? t(`orders.discActName.${a.note}`, a.note) : a.note}</span>}
+        {a.note && a.note !== "backfill" && <span className="text-xs font-semibold text-slate-500">· {a.action === "discrepancy_undo" ? t(`orders.discActName.${a.note}`, a.note) : a.note}</span>}
       </div>
       <div className="text-[11px] text-slate-500">
         {new Date(a.at).toLocaleString()} · {a.by}

@@ -890,8 +890,6 @@ export default function Estimates() {
               <tr className="border-b-2 border-slate-800 text-[11px] uppercase tracking-wider text-slate-700">
                 <th className="text-left py-2 px-2 w-full">Item</th>
                 <th className="text-right py-2 px-2 w-16">Qty</th>
-                <th className="text-right py-2 px-2 w-24 print:hidden">Rate ₹</th>
-                <th className="text-right py-2 px-2 w-24 print:hidden">Disc.</th>
                 <th className="text-right py-2 px-2 w-24">Net ₹</th>
                 <th className="text-right py-2 px-2 w-28 print:pr-8">Line ₹</th>
               </tr>
@@ -915,12 +913,6 @@ export default function Estimates() {
                     )}
                   </td>
                   <td className="py-2 px-2 text-right tabular-nums font-mono">{l.quantity}</td>
-                  <td className="py-2 px-2 text-right tabular-nums font-mono print:hidden">
-                    {l.unit_price.toFixed(2)}
-                  </td>
-                  <td className="py-2 px-2 text-right tabular-nums font-mono print:hidden">
-                    {l.discount_value > 0 ? `${l.discount_value}${l.discount_type}` : "—"}
-                  </td>
                   <td className="py-2 px-2 text-right tabular-nums font-mono">
                     {l.net_unit_price.toFixed(2)}
                   </td>
@@ -933,8 +925,6 @@ export default function Estimates() {
             <tfoot>
               <tr className="border-t-2 border-slate-800">
                 <td colSpan={2} className="py-2 px-2"></td>
-                <td className="py-2 px-2 print:hidden"></td>
-                <td className="py-2 px-2 print:hidden"></td>
                 <td className="py-2 px-2 text-right font-bold uppercase tracking-wider text-slate-800 whitespace-nowrap">
                   Line total
                 </td>
